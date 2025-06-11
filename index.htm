@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Youth Ground Malaysia - 통합 시스템 v3.1</title>
+    <!-- Google Fonts: Noto Sans KR -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js for data visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Firebase SDK (모듈 방식이 아닌 전역 방식) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+    <style>
+        /* 사용자 정의 스타일 */
+        body { font-family: 'Noto Sans KR', sans-serif; }
+        .gradient-bg { background: linear-gradient(135deg, #4ECDC4 0%, #44A08D 100%); }
+        .form-page { display: none; animation: fadeIn 0.6s ease-in-out; }
+        .form-page.active { display: block; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .dashboard-card { transition: all 0.3s ease; }
+        .dashboard-card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.08); }
+        .chart-container { background: white; padding: 1.5rem; border-radius: 1rem; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .btn-custom { background: linear-gradient(135deg, #4ECDC4, #44A08D); transition: all 0.3s ease; }
+        .btn-custom:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(78, 205, 196, 0.3); }
+        .btn-custom:disabled { background: #9ca3af; cursor: not-allowed; transform: none; box-shadow: none; }
+        .input-custom { border: 2px solid #E0E0E0; background: #FAFAFA; transition: all 0.3s ease; }
+        .input-custom:focus { border-color: #4ECDC4; background: white; box-shadow: 0 0 0 3px rgba(78, 205, 196, 0.2); }
+        .checkbox-item { transition: all 0.3s ease; }
+        .checkbox-item:hover { background: #E8F8F7; transform: translateX(5px); }
+        .confirm-modal-overlay { position: fixed; inset: 0; background-color: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <!-- 신청자용 뷰 (Application View) -->
+    <div id="application-view" class="min-h-screen gradient-bg p-4 flex items-center justify-center">
+        <div class="w-full max-w-2xl bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col">
+             <!-- 헤더 -->
+            <div id="main-header" class="p-8 text-center bg-white relative">
+                 <div class="w-24 h-24 bg-white border-4 border-[#4ECDC4] rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg">
+                    <span class="text-4xl">🌍</span>
+                </div>
+                <h1 class="text-4xl font-black text-gray-800">Youth Ground Malaysia</h1>
+                <p class="text-orange-500 font-semibold mt-2 text-lg">"함께 만들고, 함께 나누고, 함께 성장하자!"</p>
+            </div>
+            <!-- 진행률 바 -->
+            <div class="w-full bg-gray-200 h-2.5">
+                <div id="progress" class="h-2.5 transition-all duration-500" style="width: 0%; background: linear-gradient(90deg, #4ECDC4, #E67E22);"></div>
+            </div>
+            <!-- 폼 영역 -->
+            <div id="form-container" class="p-8 flex-grow"></div>
+            <!-- 네비게이션 버튼 -->
+            <div id="nav-container" class="px-8 pb-8 flex justify-between items-center bg-gray-50 border-t">
+                <button id="prev-btn" class="py-2 px-6 bg-gray-300 text-gray-800 rounded-full font-semibold hover:bg-gray-400 transition">이전</button>
+                <span id="page-indicator" class="text-sm font-semibold text-gray-500"></span>
+                <button id="next-btn" class="btn-custom py-2 px-6 text-white rounded-full font-semibold">다음</button>
+                <button id="submit-btn" class="py-2 px-6 bg-green-600 text-white rounded-full font-semibold hover:bg-green-700 transition" style="display: none;">제출하기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 관리자용 뷰 (Admin Dashboard View) -->
+    <div id="admin-view" class="hidden">
+        <!-- 비밀번호 입력 모달 -->
+        <div id="password-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50">
+            <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-sm text-center">
+                <h2 class="text-2xl font-bold mb-4">관리자 인증</h2>
+                <p class="text-gray-600 mb-6">대시보드에 접근하려면 비밀번호를 입력하세요.</p>
+                <input type="password" id="password-input" class="w-full p-3 border-2 border-gray-300 rounded-lg text-center focus:outline-none focus:border-teal-500">
+                <button id="password-submit" class="w-full mt-6 py-3 btn-custom text-white font-bold rounded-lg">접속</button>
+            </div>
+        </div>
+        <!-- 삭제 확인 모달 -->
+        <div id="confirm-delete-modal" class="confirm-modal-overlay hidden">
+            <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-sm text-center">
+                <h2 class="text-xl font-bold mb-4 text-red-600">데이터 삭제 확인</h2>
+                <p id="confirm-delete-message" class="text-gray-700 mb-6">이 작업은 되돌릴 수 없습니다.</p>
+                <div class="flex justify-center space-x-4">
+                    <button id="cancel-delete-btn" class="py-2 px-6 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition">취소</button>
+                    <button id="confirm-delete-btn" class="py-2 px-6 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition">삭제</button>
+                </div>
+            </div>
+        </div>
+        <!-- 실제 대시보드 콘텐츠 -->
+        <div id="dashboard-content" class="hidden">
+            <header class="bg-white shadow-md sticky top-0 z-10">
+                <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+                    <h1 class="text-3xl font-bold text-[#44A08D]">Youth Ground Malaysia</h1>
+                    <div class="flex items-center space-x-4">
+                        <button id="excel-download" class="btn-custom text-white font-semibold py-2 px-4 rounded-lg text-sm">엑셀로 다운로드</button>
+                        <input type="text" id="search-input" placeholder="이름 또는 내용으로 검색..." class="p-2 border rounded-md focus:ring-[#4ECDC4] focus:border-[#4ECDC4]">
+                    </div>
+                </div>
+                <!-- 탭 메뉴 -->
+                <nav class="bg-gray-50">
+                    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                        <div class="flex justify-center space-x-8">
+                            <button data-tab="stats" class="tab-btn border-b-2 border-teal-500 text-teal-600 py-4 px-1 text-sm font-medium">통계 분석</button>
+                            <button data-tab="roster" class="tab-btn border-b-2 border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 py-4 px-1 text-sm font-medium">팀원 연락망</button>
+                            <button data-tab="rawdata" class="tab-btn border-b-2 border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 py-4 px-1 text-sm font-medium">입력 정보</button>
+                            <button data-tab="profiles" class="tab-btn border-b-2 border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 py-4 px-1 text-sm font-medium">개별 프로필</button>
+                        </div>
+                    </div>
+                </nav>
+            </header>
+            <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+                <div id="loading-indicator" class="text-center py-12"><p class="text-lg text-gray-600">데이터를 불러오는 중입니다...</p></div>
+                <!-- 통계 분석 탭 -->
+                <div id="stats-tab" class="tab-content">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                        <div class="bg-white rounded-xl shadow-lg p-6 text-center"><h3 class="text-lg font-semibold text-gray-500">총 지원자</h3><p id="total-participants" class="text-5xl font-bold text-teal-600 mt-2">0</p></div>
+                        <div class="bg-white rounded-xl shadow-lg p-6 text-center"><h3 class="text-lg font-semibold text-gray-500">평균 연령</h3><p id="average-age" class="text-5xl font-bold text-teal-600 mt-2">0</p></div>
+                        <div class="bg-white rounded-xl shadow-lg p-6 text-center"><h3 class="text-lg font-semibold text-gray-500">성비 (남:여)</h3><p id="gender-ratio" class="text-5xl font-bold text-teal-600 mt-2">0 : 0</p></div>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div class="chart-container"><canvas id="genderChart"></canvas></div>
+                        <div class="chart-container"><canvas id="ageChart"></canvas></div>
+                        <div class="chart-container"><canvas id="roleChart"></canvas></div>
+                        <div class="chart-container"><canvas id="motivationChart"></canvas></div>
+                        <div class="chart-container"><canvas id="concernChart"></canvas></div>
+                        <div class="chart-container"><canvas id="spicyChart"></canvas></div>
+                    </div>
+                </div>
+                <!-- 팀원 연락망 탭 -->
+                <div id="roster-tab" class="tab-content hidden"><div class="bg-white rounded-xl shadow-lg overflow-hidden"><table class="min-w-full"><thead class="bg-teal-500 text-white"><tr><th class="py-3 px-4 text-left text-sm font-semibold">이름</th><th class="py-3 px-4 text-left text-sm font-semibold">나이</th><th class="py-3 px-4 text-left text-sm font-semibold">성별</th><th class="py-3 px-4 text-left text-sm font-semibold">연락처</th><th class="py-3 px-4 text-left text-sm font-semibold">거주지역</th><th class="py-3 px-4 text-left text-sm font-semibold">비상연락처</th></tr></thead><tbody id="roster-table-body" class="divide-y divide-gray-200"></tbody></table></div></div>
+                <!-- 입력 정보 탭 (Raw Data) -->
+                <div id="rawdata-tab" class="tab-content hidden"><div class="bg-white rounded-xl shadow-lg overflow-x-auto"><table class="min-w-full text-sm"><thead id="rawdata-table-head" class="bg-gray-100"></thead><tbody id="rawdata-table-body" class="divide-y divide-gray-200"></tbody></table></div></div>
+                <!-- 개별 프로필 탭 -->
+                <div id="profiles-tab" class="tab-content hidden"><div id="submission-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div></div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        // 이 스크립트는 모듈이 아니므로, 모든 함수와 변수는 전역 범위에 있습니다.
+        // =========================================================================================
+        // 시스템 설정
+        // =========================================================================================
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "AIza...", authDomain: "...", projectId: "..." };
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const COLLECTION_NAME = `artifacts/${appId}/public/data/submissions_v3.1`; // 컬렉션 분리
+
+        // Firebase 앱 초기화 및 인증
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+        
+        auth.signInAnonymously().catch((error) => console.error("Anonymous sign-in failed:", error));
+
+        // =========================================================================================
+        // 질문 데이터
+        // =========================================================================================
+        const questions = [
+            { page: 1, type: 'intro' },
+            {
+                page: 2, title: '🤗 반가워요! 시작 전 약속해요', type: 'consent',
+                html: `<p class="text-gray-600 text-center mb-6">프로젝트에 관심 가져주셔서 정말 감사해요!<br>이 프로젝트는 단순한 봉사가 아닌, 우리 모두가 함께 성장하는 특별한 여정이 될 거예요.<br>먼저 서로를 알아가기 위한 정보를 나누기 전, 몇 가지 약속을 할까요?</p>
+                       <div class="bg-teal-50 border-l-4 border-teal-400 p-4 mb-6 rounded-r-lg">
+                           <h3 class="font-bold text-teal-800">📋 개인정보 수집 및 활용 동의</h3>
+                           <ul class="list-disc list-inside text-sm text-teal-700 mt-2 space-y-1">
+                               <li><strong class="font-semibold">수집 목적:</strong> 원활한 프로젝트 준비, 최고의 팀워크 형성, 현지 활동 중 안전 확보</li>
+                               <li><strong class="font-semibold">수집 항목:</strong> 이름, 연락처, 건강 정보 등 아래 작성 항목</li>
+                               <li><strong class="font-semibold">보유 및 이용 기간:</strong> 프로젝트 종료 후 1년</li>
+                               <li><strong class="font-semibold">동의 거부 권리:</strong> 동의를 거부할 수 있으나, 이 경우 프로젝트 참여에 제한이 있을 수 있습니다.</li>
+                           </ul>
+                       </div>
+                       <div class="space-y-3">
+                           <label class="checkbox-item flex items-center p-3 bg-gray-50 rounded-lg"><input type="checkbox" id="agree_personal_info" name="agree_personal_info" class="h-5 w-5 text-teal-600 border-gray-300 rounded focus:ring-teal-500"><span class="ml-3 text-gray-800">개인정보 수집 및 활용에 동의합니다.</span></label>
+                           <label class="checkbox-item flex items-center p-3 bg-gray-50 rounded-lg"><input type="checkbox" id="agree_photo" name="agree_photo" class="h-5 w-5 text-teal-600 border-gray-300 rounded focus:ring-teal-500"><span class="ml-3 text-gray-800">활동 기록을 위한 사진 촬영 및 활용에 동의합니다.</span></label>
+                       </div>`
+            },
+            {
+                page: 3, title: '🙋‍♀️ 나는 누구인가요?', fields: [
+                    { id: 'name', label: '이름 (한글)', type: 'text', placeholder: '홍길동', required: true, hint: '평소 불러주길 원하는 이름이 있다면 그걸로!' },
+                    { id: 'engName', label: '이름 (영문)', type: 'text', placeholder: 'GILDONG HONG', required: true, hint: '여권에 적힌 이름과 동일하게 적어주세요' },
+                    { id: 'gender', label: '성별', type: 'radio', required: true, options: ['남성', '여성'] },
+                    { id: 'birthdate', label: '생년월일', type: 'text', placeholder: 'YYYY-MM-DD', required: true },
+                    { id: 'contact', label: '연락처', type: 'tel', placeholder: '010-1234-5678', required: true },
+                    { id: 'email', label: '이메일', type: 'email', placeholder: 'email@example.com', required: true },
+                    { id: 'address', label: '어디에 살고 계세요?', type: 'text', placeholder: '예: 서울시 강남구, 부산시 해운대구', required: true},
+                    { id: 'emergencyRelation', label: '혹시 모를 상황을 위한 비상연락처 (관계)', type: 'text', placeholder: '예: 형제, 자매, 친구, 기타', required: true },
+                    { id: 'emergencyContact', label: '비상연락처 (연락처)', type: 'tel', placeholder: '010-9876-5432', required: true },
+                ]
+            },
+            {
+                page: 4, title: '💪 나의 슈퍼파워는?', fields: [
+                    { id: 'strengths', label: '내가 생각하는 나의 가장 큰 장점', type: 'textarea', placeholder: '자신 있게 자랑해주세요! 예: 밝은 에너지로 분위기를 좋게 만들어요', required: true },
+                    { id: 'teamRole', label: '팀에서 나는 주로 어떤 역할인가요?', type: 'radio', required: true, options: ['리더형 (앞장서서 이끌어가요)', '서포터형 (든든하게 뒤에서 도와줘요)', '분위기 메이커형 (재미있게 만들어요)', '실무형 (꼼꼼하게 일을 처리해요)']},
+                    { id: 'contribution', label: '팀의 성공을 위해 내가 기여하고 싶은 부분은?', type: 'textarea', placeholder: '어떤 역할로 팀에 힘이 되고 싶나요?', required: true }
+                ]
+            },
+            {
+                page: 5, title: '💭 이 프로젝트, 나에게는?', fields: [
+                    { id: 'motivation', label: '이 프로젝트에 왜 참여하고 싶으셨나요? (여러 개 선택 가능)', type: 'checkbox', required: true, options: ['새로운 문화를 경험하고 싶어서', '나도 누군가에게 도움이 되고 싶어서', '요리하는 걸 좋아해서', '팀워크를 경험해보고 싶어서', '해외에서 봉사활동을 해보고 싶어서', '새로운 친구들을 만나고 싶어서', '나 자신을 성장시키고 싶어서'] },
+                    { id: 'motivation_other', label: '기타 참여 동기', type: 'text', placeholder: '다른 이유가 있다면 자유롭게 적어주세요.'},
+                    { id: 'goals', label: '이번 활동을 통해 얻고 싶은 가장 큰 것은 무엇인가요?', type: 'textarea', required: true, placeholder: '진솔한 마음을 들려주세요. 예: 아이들과 소통하며 성장하는 걸 느끼고 싶어요.' },
+                    { id: 'expectations', label: '가장 기대되는 순간은 언제일까요?', type: 'textarea', required: true, placeholder: '상상만 해도 설레는 순간을 적어주세요. 예: 아이들과 함께 떡볶이 만들 때' },
+                ]
+            },
+            {
+                page: 6, title: '🏥 건강하고 안전하게!', fields: [
+                    { id: 'allergies', label: '알레르기가 있나요? (음식, 약물 등)', type: 'textarea', required: true, placeholder: "없으시다면 '없음'이라고 적어주세요. 자세히 알려주실수록 좋아요." },
+                    { id: 'medication', label: '현재 복용 중인 약이 있나요?', type: 'textarea', required: true, placeholder: "없으시다면 '없음'이라고 적어주세요." },
+                    { id: 'health_notes', label: '특별히 주의해야 할 건강 이슈가 있다면 알려주세요.', type: 'textarea', required: true, placeholder: '비밀은 보장됩니다. 예: 당뇨, 고혈압, 심장질환 등' },
+                    { id: 'spicyLevel', label: '매운 음식은 어느 정도까지 괜찮아요?', type: 'radio', required: true, options: ['전혀 못 먹어요 😵', '조금 매운 라면 정도 🌶️', '불닭볶음면도 OK! 🔥']},
+                ]
+            },
+            {
+                page: 7, title: '😰 솔직한 고민과 바람', fields: [
+                    { id: 'concerns', label: '솔직히 조금 걱정되는 것이 있다면? (여러 개 선택 가능)', type: 'checkbox', required: true, options: ['영어나 현지 언어로 소통하는 것', '문화 차이로 실수할까봐', '현지 음식이 입에 안 맞을까봐', '팀원들과 잘 어울릴 수 있을까', '내가 제대로 도움이 될 수 있을까', '안전한 곳인지 걱정돼요', '요리를 잘 못해서 민폐가 될까봐']},
+                    { id: 'concerns_other', label: '다른 걱정이 있다면 적어주세요.', type: 'text', placeholder: '어떤 것이든 괜찮아요.'},
+                    { id: 'support_needed', label: '어떤 도움이 있으면 좋겠어요?', type: 'textarea', required: true, placeholder: '구체적으로 말해주세요. 예: 요리 연습을 미리 해보고 싶어요, 영어 회화를 조금 배우고 싶어요.' },
+                ]
+            },
+            {
+                page: 8,
+                type: 'info',
+                title: '📸 프로필 사진 제출 안내',
+                html: `<div class="text-center p-4 bg-teal-50 rounded-lg">
+                        <p class="text-gray-800">우리, 말레이시아에서 만나기 전에 서로 얼굴을 미리 알면 더 친근하게 시작할 수 있을 거예요! 😊</p>
+                        <div class="mt-4 p-4 bg-white border border-teal-200 rounded-md">
+                            <p class="font-semibold">아래 이메일 주소로 가장 나다운 사진 1장을 보내주세요.</p>
+                            <p class="mt-2"><strong>받는 사람:</strong> <a href="mailto:rescuemyself@gmail.com" class="text-teal-600 font-bold">rescuemyself@gmail.com (데미안 임정훈 코치)</a></p>
+                            <p><strong>메일 제목:</strong> [유스그라운드] OOO 사진 제출</p>
+                        </div>
+                       </div>`
+            },
+            {
+                page: 9,
+                type: 'final_consent',
+                title: '🎉 마지막 다짐과 확인!',
+                html: `<p class="text-gray-700 leading-relaxed mb-6">여기까지 오시느라 정말 고생 많으셨어요! 이제 정말 마지막 단계예요. 우리는 준비 과정부터 서로를 존중하며 함께 성장하는 '원팀'입니다. 아래 약속들을 확인하고, 제출 버튼을 눌러주세요.</p>
+                       <div class="space-y-3">
+                           <label class="checkbox-item flex items-center p-3 bg-gray-50 rounded-lg"><input type="checkbox" id="promise1" name="promise1" class="h-5 w-5 text-teal-600 border-gray-300 rounded focus:ring-teal-500"><span class="ml-3 text-gray-800">서로의 다름을 존중하며 긍정적으로 소통하겠습니다.</span></label>
+                           <label class="checkbox-item flex items-center p-3 bg-gray-50 rounded-lg"><input type="checkbox" id="promise2" name="promise2" class="h-5 w-5 text-teal-600 border-gray-300 rounded focus:ring-teal-500"><span class="ml-3 text-gray-800">안전을 최우선으로 생각하며 모든 활동에 임겠습니다.</span></label>
+                           <label class="checkbox-item flex items-center p-3 bg-gray-50 rounded-lg"><input type="checkbox" id="promise3" name="promise3" class="h-5 w-5 text-teal-600 border-gray-300 rounded focus:ring-teal-500"><span class="ml-3 text-gray-800">사전 준비 모임에 적극적으로 참여하여 함께 성장하겠습니다.</span></label>
+                       </div>`
+            },
+            {
+                page: 10,
+                type: 'final',
+                html: `<div class="text-center py-10">
+                         <div class="text-6xl mb-4">🎊</div>
+                         <h2 class="mt-4 text-3xl font-bold text-gray-800">유스그라운드 원팀, 여정의 시작을 축하합니다!</h2>
+                         <p class="mt-4 text-gray-600 leading-relaxed">소중한 이야기를 들려주셔서 감사합니다.<br>이제 우리는 말레이시아를 향한 여정을 함께 시작하는 '원팀'입니다.<br><br>유스그라운드 프로젝트 구성원으로서 여러분의 성장을 응원하며,<br>말레이시아에서 함께할 활동들이 진심으로 기대됩니다!</p>
+                         <p class="mt-8 text-xl font-semibold text-teal-600">✨ 매주 일요일 오후,<br>우리 함께 조금씩 앞으로 나아가요~🛫</p>
+                       </div>`
+            }
+        ];
+        
+        // =========================================================================================
+        // 신청서 UI 및 로직
+        // =========================================================================================
+        document.addEventListener('DOMContentLoaded', () => {
+            const applicationView = document.getElementById('application-view');
+            if (!applicationView) return;
+
+            const formContainer = document.getElementById('form-container');
+            const mainHeader = document.getElementById('main-header');
+            const progress = document.getElementById('progress');
+            const prevBtn = document.getElementById('prev-btn');
+            const nextBtn = document.getElementById('next-btn');
+            const submitBtn = document.getElementById('submit-btn');
+            const pageIndicator = document.getElementById('page-indicator');
+            const navContainer = document.getElementById('nav-container');
+            
+            let currentPage = 1;
+            const totalPages = questions.length;
+            const formState = {};
+
+            const renderPage = () => {
+                const pageData = questions.find(q => q.page === currentPage);
+                if (!pageData) return;
+
+                let contentHtml = '';
+                if (pageData.type === 'intro') {
+                    contentHtml = `<div class="text-center">
+                        <p class="text-gray-700 leading-relaxed text-lg">안녕하세요! 말레이시아에서 특별한 경험을 함께할<br>유스그라운드 팀원이 되어주세요 🙌</p>
+                        <div id="contact-info-trigger" class="mt-8 space-y-3 text-gray-600 cursor-pointer">
+                            <p class="text-lg">📝 우리를 더 알아가는 시간 (약 10분)</p>
+                            <p class="text-lg">📞 궁금한 점: 데미안 임정훈 코치 010-5261-9459</p>
+                        </div>
+                       </div>
+                       <div class="text-center mt-12">
+                         <button id="start-btn" class="btn-custom py-3 px-8 text-white rounded-full font-bold text-lg">Let's Start! 함께 시작해요! 🚀</button>
+                       </div>`;
+                }
+                else if (pageData.html) {
+                    contentHtml = pageData.html;
+                } else if (pageData.fields) {
+                    contentHtml = `<div class="mt-8 space-y-6">${
+                        pageData.fields.map(field => {
+                            const requiredStar = field.required ? '<span class="text-red-500">*</span>' : '';
+                            const hintHtml = field.hint ? `<p class="text-sm text-gray-500 mt-2 ml-1">💡 ${field.hint}</p>` : '';
+                            let fieldInputHtml = '';
+                            switch(field.type) {
+                                case 'textarea':
+                                    fieldInputHtml = `<textarea id="${field.id}" name="${field.id}" rows="4" class="input-custom w-full p-3 rounded-lg" placeholder="${field.placeholder || ''}"></textarea>`;
+                                    break;
+                                case 'radio':
+                                    fieldInputHtml = `<div class="space-y-3 mt-2">${
+                                        field.options.map((option, index) => `
+                                            <label class="checkbox-item flex items-center p-3 bg-gray-50 rounded-lg">
+                                                <input type="radio" id="${field.id}-${index}" name="${field.id}" value="${option}" class="h-5 w-5 text-teal-600 border-gray-300 focus:ring-teal-500">
+                                                <span class="ml-3 text-gray-800">${option}</span>
+                                            </label>`).join('')
+                                    }</div>`;
+                                    break;
+                                case 'checkbox':
+                                    fieldInputHtml = `<div class="space-y-3 mt-2">${
+                                        field.options.map((option, index) => `
+                                            <label class="checkbox-item flex items-center p-3 bg-gray-50 rounded-lg">
+                                                <input type="checkbox" id="${field.id}-${index}" name="${field.id}" value="${option}" class="h-5 w-5 text-teal-600 border-gray-300 focus:ring-teal-500">
+                                                <span class="ml-3 text-gray-800">${option}</span>
+                                            </label>`).join('')
+                                    }</div>`;
+                                    break;
+                                default:
+                                    fieldInputHtml = `<input type="${field.type}" id="${field.id}" name="${field.id}" class="input-custom w-full p-3 rounded-lg" placeholder="${field.placeholder || ''}">`;
+                            }
+                            return `<div>
+                                        <label for="${field.id}" class="block text-md font-semibold text-gray-700 mb-2">${field.label}${requiredStar}</label>
+                                        ${fieldInputHtml}
+                                        ${hintHtml}
+                                    </div>`;
+                        }).join('')
+                    }</div>`;
+                }
+
+                const pageContainerHtml = `
+                    <div class="form-page active" data-page="${currentPage}">
+                        ${pageData.title ? `<h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">${pageData.title}</h2>` : ''}
+                        ${contentHtml}
+                    </div>`;
+
+                formContainer.innerHTML = pageContainerHtml;
+                mainHeader.style.display = (pageData.type === 'intro') ? 'block' : 'none';
+
+                if (pageData.type === 'intro') {
+                    document.getElementById('start-btn').addEventListener('click', () => {
+                        currentPage++;
+                        renderPage();
+                    });
+                    document.getElementById('contact-info-trigger')?.addEventListener('click', () => {
+                        document.getElementById('application-view').style.display = 'none';
+                        document.getElementById('admin-view').style.display = 'block';
+                    });
+                }
+                
+                const renderedPage = formContainer.querySelector(`[data-page="${currentPage}"]`);
+                if (renderedPage) {
+                    renderedPage.querySelectorAll('input, textarea').forEach(input => {
+                        const key = input.name || input.id;
+                        if(input.type === 'checkbox' && !Array.isArray(formState[key])) formState[key] = [];
+                        
+                        const savedValue = formState[key];
+                        if (savedValue !== undefined) {
+                            if (input.type === 'checkbox') {
+                               if(Array.isArray(savedValue)) input.checked = savedValue.includes(input.value);
+                               else input.checked = savedValue;
+                            }
+                            else if (input.type === 'radio' && input.value === savedValue) input.checked = true;
+                            else if (input.type !== 'radio') input.value = savedValue;
+                        }
+                    });
+                }
+                updateControls();
+            };
+
+            const savePageData = () => {
+                const pageElement = formContainer.querySelector(`[data-page="${currentPage}"]`);
+                if (pageElement) {
+                    pageElement.querySelectorAll('input, textarea').forEach(input => {
+                        const key = input.name || input.id;
+                        if (input.type === 'checkbox') {
+                            const fieldDef = questions.flatMap(q => q.fields || []).find(f => f.id === key || f.id === input.name);
+                            if (fieldDef && fieldDef.type === 'checkbox' && Array.isArray(fieldDef.options)) {
+                                if(!formState[key] || !Array.isArray(formState[key])) formState[key] = [];
+                                const value = input.value;
+                                const index = formState[key].indexOf(value);
+                                if(input.checked && index === -1) formState[key].push(value);
+                                else if (!input.checked && index > -1) formState[key].splice(index, 1);
+                            } else {
+                                formState[key] = input.checked;
+                            }
+                        }
+                        else if (input.type === 'radio' && input.checked) formState[key] = input.value;
+                        else if (input.type !== 'radio' && input.type !== 'checkbox') formState[key] = input.value;
+                    });
+                }
+            };
+            
+            const validatePage = () => {
+                const pageData = questions.find(q => q.page === currentPage);
+                const pageElement = formContainer.querySelector(`[data-page="${currentPage}"]`);
+                if (!pageElement) return false;
+
+                if (pageData.type === 'consent') {
+                    if (!pageElement.querySelector('#agree_personal_info')?.checked || !pageElement.querySelector('#agree_photo')?.checked) {
+                        alert('두 가지 약속에 모두 동의해주세요.');
+                        return false;
+                    }
+                } else if (pageData.type === 'final_consent') {
+                    if (!pageElement.querySelector('#promise1')?.checked || !pageElement.querySelector('#promise2')?.checked || !pageElement.querySelector('#promise3')?.checked) {
+                        alert('세 가지 약속에 모두 동의해주세요.');
+                        return false;
+                    }
+                }
+                
+                if (pageData.fields) {
+                    for (const field of pageData.fields) {
+                        if (field.required) {
+                           if (field.type === 'radio' || field.type === 'checkbox') {
+                               if(!pageElement.querySelector(`[name="${field.id}"]:checked`)) {
+                                   alert(`'${field.label}'은(는) 필수 항목입니다.`);
+                                   return false;
+                               }
+                           } else {
+                                const inputElement = pageElement.querySelector(`#${field.id}`);
+                                if (!inputElement || !inputElement.value.trim()) {
+                                    alert(`'${field.label}'은(는) 필수 항목입니다.`);
+                                    inputElement?.focus();
+                                    return false;
+                                }
+                           }
+                        }
+                    }
+                }
+                return true;
+            };
+
+            const updateControls = () => {
+                const lastInputPage = totalPages - 1;
+
+                if (currentPage === 1 || currentPage === totalPages) {
+                    navContainer.style.display = 'none';
+                } else {
+                    navContainer.style.display = 'flex';
+                }
+                
+                if (currentPage > 1 && currentPage <= lastInputPage) {
+                    pageIndicator.textContent = `Step ${currentPage - 1} of ${lastInputPage - 1}`;
+                    pageIndicator.style.visibility = 'visible';
+                    progress.style.width = `${((currentPage - 1) / (lastInputPage - 1)) * 100}%`;
+                } else {
+                    pageIndicator.style.visibility = 'hidden';
+                    progress.style.width = '0%';
+                }
+                
+                prevBtn.style.display = (currentPage > 1 && currentPage < totalPages) ? 'inline-block' : 'none';
+                nextBtn.style.display = (currentPage < lastInputPage && currentPage > 1) ? 'inline-block' : 'none';
+                submitBtn.style.display = (currentPage === lastInputPage) ? 'inline-block' : 'none';
+            };
+
+            nextBtn.addEventListener('click', () => {
+                if (validatePage()) {
+                    savePageData();
+                    currentPage++;
+                    renderPage();
+                }
+            });
+
+            prevBtn.addEventListener('click', () => {
+                savePageData();
+                currentPage--;
+                renderPage();
+            });
+
+            submitBtn.addEventListener('click', async () => {
+                savePageData();
+                if (validatePage()) {
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = '제출 중...';
+                    
+                    const submissionData = { ...formState };
+                    ['agree_personal_info', 'agree_photo', 'promise1', 'promise2', 'promise3'].forEach(key => delete submissionData[key]);
+                    submissionData.submittedAt = new Date().toISOString(); 
+
+                    try {
+                        await firebase.firestore().collection(COLLECTION_NAME).add(submissionData);
+                        currentPage++;
+                        renderPage(); 
+                    } catch (e) {
+                        console.error("Error adding document: ", e);
+                        alert('오류가 발생했습니다. 다시 시도해주세요.');
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = '제출하기';
+                    }
+                }
+            });
+            
+            renderPage();
+        });
+
+        // =========================================================================================
+        // 대시보드 UI 및 로직
+        // =========================================================================================
+        const adminView = document.getElementById('admin-view');
+        
+        const passwordSubmit = document.getElementById('password-submit');
+        const passwordInput = document.getElementById('password-input');
+        
+        const checkPassword = () => {
+            if (passwordInput.value === 'cometogether') { // 패스워드 변경
+                document.getElementById('password-modal').style.display = 'none';
+                document.getElementById('dashboard-content').style.display = 'block';
+                loadDashboardData();
+            } else {
+                alert('비밀번호가 틀렸습니다.');
+                passwordInput.value = '';
+            }
+        };
+
+        passwordSubmit.addEventListener('click', checkPassword);
+        passwordInput.addEventListener('keyup', (event) => {
+            if (event.key === 'Enter') checkPassword();
+        });
+
+        // 탭 전환 로직
+        const tabBtns = document.querySelectorAll('.tab-btn');
+        const tabContents = document.querySelectorAll('.tab-content');
+
+        tabBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetTab = btn.dataset.tab;
+
+                tabBtns.forEach(b => {
+                    b.classList.remove('border-teal-500', 'text-teal-600');
+                    b.classList.add('border-transparent', 'text-gray-500', 'hover:border-gray-300', 'hover:text-gray-700');
+                });
+                btn.classList.add('border-teal-500', 'text-teal-600');
+                btn.classList.remove('border-transparent', 'text-gray-500', 'hover:border-gray-300', 'hover:text-gray-700');
+
+                tabContents.forEach(content => {
+                    if (content.id === `${targetTab}-tab`) {
+                        content.classList.remove('hidden');
+                    } else {
+                        content.classList.add('hidden');
+                    }
+                });
+            });
+        });
+
+
+        let allSubmissionsData = [];
+        let charts = {};
+
+        // 차트 생성 및 업데이트 함수
+        function createOrUpdateChart(chartId, type, labels, data, title) {
+            const ctx = document.getElementById(chartId).getContext('2d');
+            if(charts[chartId]) {
+                charts[chartId].destroy();
+            }
+            charts[chartId] = new Chart(ctx, {
+                type: type,
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: title,
+                        data: data,
+                        backgroundColor: [
+                            'rgba(78, 205, 196, 0.6)', 'rgba(68, 160, 141, 0.6)', 'rgba(230, 126, 34, 0.6)',
+                            'rgba(52, 152, 219, 0.6)', 'rgba(155, 89, 182, 0.6)', 'rgba(241, 196, 15, 0.6)',
+                            'rgba(231, 76, 60, 0.6)', 'rgba(26, 188, 156, 0.6)', 'rgba(46, 204, 113, 0.6)'
+                        ],
+                        borderColor: [
+                            'rgba(78, 205, 196, 1)', 'rgba(68, 160, 141, 1)', 'rgba(230, 126, 34, 1)',
+                            'rgba(52, 152, 219, 1)', 'rgba(155, 89, 182, 1)', 'rgba(241, 196, 15, 1)',
+                            'rgba(231, 76, 60, 1)', 'rgba(26, 188, 156, 1)', 'rgba(46, 204, 113, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: type === 'pie' || type === 'doughnut' ? 'top' : 'bottom',
+                        },
+                        title: {
+                            display: true,
+                            text: title,
+                            font: { size: 18 }
+                        }
+                    },
+                    indexAxis: type === 'bar' ? 'y' : 'x',
+                }
+            });
+        }
+        
+        // 데이터 분석 함수
+        function analyzeData(submissions) {
+            if (submissions.length === 0) {
+                 // 차트 초기화 또는 숨기기
+                Object.values(charts).forEach(chart => chart.destroy());
+                document.getElementById('total-participants').textContent = 0;
+                document.getElementById('average-age').textContent = 'N/A';
+                document.getElementById('gender-ratio').textContent = '0 : 0';
+                return;
+            };
+            
+            // 핵심 지표
+            document.getElementById('total-participants').textContent = submissions.length;
+
+            const ages = submissions.map(d => {
+                if(!d.birthdate || !/^(\\d{4})-(\\d{2})-(\\d{2})$/.test(d.birthdate)) return null;
+                const birthYear = parseInt(d.birthdate.substring(0,4), 10);
+                return new Date().getFullYear() - birthYear;
+            }).filter(age => age !== null);
+            const averageAge = ages.length ? (ages.reduce((a, b) => a + b, 0) / ages.length).toFixed(1) : 'N/A';
+            document.getElementById('average-age').textContent = averageAge;
+            
+            const genderCounts = submissions.reduce((acc, d) => {
+                if (d.gender) acc[d.gender] = (acc[d.gender] || 0) + 1;
+                return acc;
+            }, {});
+            const maleCount = genderCounts['남성'] || 0;
+            const femaleCount = genderCounts['여성'] || 0;
+            document.getElementById('gender-ratio').textContent = `${maleCount} : ${femaleCount}`;
+
+            // 차트 데이터
+            createOrUpdateChart('genderChart', 'pie', ['남성', '여성'], [maleCount, femaleCount], '성별 분포');
+            
+            const ageGroups = { '20대 초반': 0, '20대 중반': 0, '20대 후반': 0, '30대 이상': 0 };
+            ages.forEach(age => {
+                if (age <= 23) ageGroups['20대 초반']++;
+                else if (age <= 26) ageGroups['20대 중반']++;
+                else if (age <= 29) ageGroups['20대 후반']++;
+                else ageGroups['30대 이상']++;
+            });
+            createOrUpdateChart('ageChart', 'bar', Object.keys(ageGroups), Object.values(ageGroups), '연령대 분포');
+
+            const roleCounts = submissions.reduce((acc, d) => {
+                if(d.teamRole) acc[d.teamRole] = (acc[d.teamRole] || 0) + 1;
+                return acc;
+            }, {});
+            createOrUpdateChart('roleChart', 'bar', Object.keys(roleCounts), Object.values(roleCounts), '팀 역할 선호도');
+
+            const motivationCounts = submissions.flatMap(d => d.motivation || []).reduce((acc, m) => {
+                acc[m] = (acc[m] || 0) + 1;
+                return acc;
+            }, {});
+            const sortedMotivations = Object.entries(motivationCounts).sort((a, b) => b[1] - a[1]);
+            createOrUpdateChart('motivationChart', 'bar', sortedMotivations.map(d => d[0]), sortedMotivations.map(d => d[1]), '참여 동기');
+            
+            const concernCounts = submissions.flatMap(d => d.concerns || []).reduce((acc, c) => {
+                acc[c] = (acc[c] || 0) + 1;
+                return acc;
+            }, {});
+             const sortedConcerns = Object.entries(concernCounts).sort((a, b) => b[1] - a[1]);
+            createOrUpdateChart('concernChart', 'bar', sortedConcerns.map(d => d[0]), sortedConcerns.map(d => d[1]), '주요 걱정거리');
+
+            const spicyCounts = submissions.reduce((acc, d) => {
+                if (d.spicyLevel) acc[d.spicyLevel] = (acc[d.spicyLevel] || 0) + 1;
+                return acc;
+            }, {});
+            createOrUpdateChart('spicyChart', 'doughnut', Object.keys(spicyCounts), Object.values(spicyCounts), '매운맛 선호도');
+        }
+
+
+        async function loadDashboardData() {
+            const listEl = document.getElementById('submission-list');
+            const loadingEl = document.getElementById('loading-indicator');
+            
+            loadingEl.style.display = 'block';
+            listEl.innerHTML = '';
+            
+            try {
+                const q = firebase.firestore().collection(COLLECTION_NAME).orderBy("submittedAt", "desc");
+                const querySnapshot = await q.get();
+                
+                allSubmissionsData = [];
+                querySnapshot.forEach((doc) => {
+                    allSubmissionsData.push({ id: doc.id, ...doc.data() });
+                });
+
+                loadingEl.style.display = 'none';
+                renderDashboard(allSubmissionsData);
+                renderRosterTable(allSubmissionsData);
+                renderRawDataTable(allSubmissionsData);
+                analyzeData(allSubmissionsData);
+
+            } catch (error) {
+                console.error("Error loading data: ", error);
+                loadingEl.style.display = 'none';
+                listEl.innerHTML = `<p class="text-red-500 text-center">데이터 로딩에 실패했습니다.</p>`;
+            }
+        }
+
+        function renderDashboard(submissions) {
+            const listEl = document.getElementById('submission-list');
+            listEl.innerHTML = '';
+
+            if (submissions.length === 0) {
+                 listEl.innerHTML = `<p class="text-gray-500 text-center col-span-full">표시할 데이터가 없습니다.</p>`;
+                 return;
+            }
+
+            submissions.forEach(data => {
+                const card = document.createElement('div');
+                card.className = 'dashboard-card bg-white rounded-xl shadow-lg p-6 flex flex-col';
+                
+                let cardHTML = `<div class="flex-grow">
+                                <h3 class="text-xl font-bold text-teal-700">${data.name || '이름 없음'}</h3>
+                                <p class="text-sm text-gray-500 mb-4">${data.email || ''} | ${data.contact || ''}</p>
+                                <div class="space-y-4 border-t pt-4 mt-4">`;
+                
+                let itemNumber = 1;
+                questions.flatMap(q => q.fields || []).forEach(field => {
+                    if (data[field.id]) {
+                        cardHTML += `<div class="py-1"><strong class="font-semibold text-gray-700 block">${itemNumber++}. ${field.label}</strong><div class="text-gray-800 pl-4 mt-1 bg-gray-50 p-2 rounded-md">${Array.isArray(data[field.id]) ? data[field.id].join(', ') : data[field.id]}</div></div>`;
+                    }
+                });
+                
+                cardHTML += `</div></div><div class="border-t mt-4 pt-4 flex justify-between items-center">
+                                <p class="text-xs text-gray-400">제출일: ${new Date(data.submittedAt).toLocaleString('ko-KR')}</p>
+                                <button class="delete-btn text-xs text-red-500 hover:text-red-700 font-semibold" data-doc-id="${data.id}" data-doc-name="${data.name || '알 수 없음'}">삭제</button>
+                             </div>`;
+                card.innerHTML = cardHTML;
+                listEl.appendChild(card);
+            });
+        }
+        
+        function renderRosterTable(submissions) {
+            const tableBody = document.getElementById('roster-table-body');
+            tableBody.innerHTML = '';
+            
+            const sortedSubmissions = [...submissions].sort((a,b) => (a.name || '').localeCompare(b.name || ''));
+
+            if (sortedSubmissions.length === 0) {
+                 tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-gray-500">팀원 정보가 없습니다.</td></tr>`;
+                 return;
+            }
+            
+            sortedSubmissions.forEach(data => {
+                const age = data.birthdate && /^(\\d{4})-(\\d{2})-(\\d{2})$/.test(data.birthdate)
+                    ? new Date().getFullYear() - parseInt(data.birthdate.substring(0,4), 10)
+                    : 'N/A';
+                const row = `
+                    <tr class="hover:bg-gray-50">
+                        <td class="py-3 px-4">${data.name || ''}</td>
+                        <td class="py-3 px-4">${age}</td>
+                        <td class="py-3 px-4">${data.gender || ''}</td>
+                        <td class="py-3 px-4">${data.contact || ''}</td>
+                        <td class="py-3 px-4">${data.address || ''}</td>
+                        <td class="py-3 px-4">${data.emergencyContact || ''} (${data.emergencyRelation || ''})</td>
+                    </tr>
+                `;
+                tableBody.innerHTML += row;
+            });
+        }
+
+        function renderRawDataTable(submissions) {
+            const tableHead = document.getElementById('rawdata-table-head');
+            const tableBody = document.getElementById('rawdata-table-body');
+            tableHead.innerHTML = '';
+            tableBody.innerHTML = '';
+            
+            if (submissions.length === 0) {
+                tableBody.innerHTML = `<tr><td class="text-center py-8 text-gray-500">데이터가 없습니다.</td></tr>`;
+                return;
+            }
+
+            const allFields = questions.flatMap(q => q.fields || []).map(f => ({id: f.id, label: f.label}));
+            
+            let headerHtml = '<tr>';
+            headerHtml += `<th class="sticky left-0 bg-gray-100 py-3 px-4 text-left text-sm font-semibold">이름</th>`;
+            allFields.filter(f => f.id !== 'name').forEach(field => {
+                headerHtml += `<th class="py-3 px-4 text-left text-sm font-semibold whitespace-nowrap">${field.label}</th>`;
+            });
+            headerHtml += '</tr>';
+            tableHead.innerHTML = headerHtml;
+
+            submissions.forEach(data => {
+                let rowHtml = '<tr>';
+                rowHtml += `<td class="sticky left-0 bg-white py-3 px-4 whitespace-nowrap">${data.name || ''}</td>`;
+                allFields.filter(f => f.id !== 'name').forEach(field => {
+                    const cellData = data[field.id] || '';
+                    rowHtml += `<td class="py-3 px-4 whitespace-nowrap">${Array.isArray(cellData) ? cellData.join(', ') : cellData}</td>`;
+                });
+                rowHtml += `</tr>`;
+                tableBody.innerHTML += rowHtml;
+            });
+        }
+        
+        document.getElementById('submission-list')?.addEventListener('click', (e) => {
+            if (e.target.classList.contains('delete-btn')) {
+                const docId = e.target.dataset.docId;
+                const docName = e.target.dataset.docName;
+                showConfirmModal(`정말 '${docName}'님의 데이터를 삭제하시겠습니까?`, () => {
+                    deleteSubmission(docId);
+                });
+            }
+        });
+
+        const confirmModal = document.getElementById('confirm-delete-modal');
+        function showConfirmModal(message, onConfirm) {
+            document.getElementById('confirm-delete-message').textContent = message;
+            confirmModal.classList.remove('hidden');
+            
+            const confirmBtn = document.getElementById('confirm-delete-btn');
+            const cancelBtn = document.getElementById('cancel-delete-btn');
+
+            const confirmHandler = () => {
+                onConfirm();
+                hideConfirmModal();
+            };
+            
+            const cancelHandler = () => {
+                hideConfirmModal();
+            };
+
+            const hideConfirmModal = () => {
+                confirmModal.classList.add('hidden');
+                confirmBtn.removeEventListener('click', confirmHandler);
+                cancelBtn.removeEventListener('click', cancelHandler);
+            };
+            
+            confirmBtn.addEventListener('click', confirmHandler, { once: true });
+            cancelBtn.addEventListener('click', cancelHandler, { once: true });
+        }
+        
+        async function deleteSubmission(docId) {
+            try {
+                await firebase.firestore().collection(COLLECTION_NAME).doc(docId).delete();
+                await loadDashboardData(); 
+            } catch (error) {
+                console.error("Error removing document: ", error);
+                alert("데이터 삭제에 실패했습니다.");
+            }
+        }
+
+        document.getElementById('search-input')?.addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            const filtered = allSubmissionsData.filter(sub => {
+                return Object.values(sub).some(val => 
+                    String(val).toLowerCase().includes(searchTerm)
+                );
+            });
+            renderDashboard(filtered);
+            renderRosterTable(filtered);
+            renderRawDataTable(filtered);
+            analyzeData(filtered);
+        });
+
+        document.getElementById('excel-download')?.addEventListener('click', () => {
+            if (allSubmissionsData.length === 0) {
+                alert('다운로드할 데이터가 없습니다.');
+                return;
+            }
+
+            const allFields = questions.flatMap(q => q.fields || []).map(f => ({id: f.id, label: f.label}));
+            const headerLabels = allFields.map(f => f.label);
+
+            let csvContent = "\\uFEFF";
+            csvContent += headerLabels.join(",") + "\\r\\n";
+            
+            allSubmissionsData.forEach(row => {
+                let rowArray = allFields.map(field => {
+                    let cellData = row[header] || '';
+                    if (Array.isArray(cellData)) {
+                        cellData = cellData.join('; ');
+                    }
+                    return `"${String(cellData).replace(/"/g, '""')}"`;
+                });
+                csvContent += rowArray.join(',') + '\\r\\n';
+            });
+            
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", "youth_ground_submissions.csv");
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+
+    </script>
+
+</body>
+</html>
